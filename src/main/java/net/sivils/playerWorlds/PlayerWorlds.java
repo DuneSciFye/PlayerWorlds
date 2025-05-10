@@ -1,0 +1,17 @@
+package net.sivils.playerWorlds;
+
+import org.bukkit.plugin.java.JavaPlugin;
+
+public final class PlayerWorlds extends JavaPlugin {
+
+    @Override
+    public void onEnable() {
+        // Plugin startup logic
+
+    }
+
+    @Override
+    public void onDisable() {
+        // Plugin shutdown logic
+    }
+}

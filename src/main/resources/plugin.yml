@@ -1,0 +1,4 @@
+name: PlayerWorlds
+version: '1.0.0'
+main: net.sivils.playerWorlds.PlayerWorlds
+api-version: '1.21'
