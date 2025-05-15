@@ -28,6 +28,7 @@ import org.mvplugins.multiverse.inventories.share.Sharables;
 import java.io.File;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.List;
 
 public class PlayerWorldsCommand {
@@ -54,15 +55,19 @@ public class PlayerWorldsCommand {
 
                     // Multiverse-Core setup
                     WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
-                    Attempt<LoadedMultiverseWorld, CreateFailureReason> test = worldManager.createWorld(CreateWorldOptions.worldName(worldUUID).environment(World.Environment.NORMAL));
-                    if (test.isFailure()) {
-                        player.sendMessage(Component.text("Failed to create overworld! Please report this to an administrator.", NamedTextColor.RED));
-                        return;
-                    } else {
-                        test.get().setAutoLoad(false);
+                    List<Attempt<LoadedMultiverseWorld, CreateFailureReason>> worlds = new ArrayList<>();
+                    worlds.add(worldManager.createWorld(CreateWorldOptions.worldName(worldUUID).environment(World.Environment.NORMAL)));
+                    worlds.add(worldManager.createWorld(CreateWorldOptions.worldName(worldUUID + "_nether").environment(World.Environment.NETHER)));
+                    worlds.add(worldManager.createWorld(CreateWorldOptions.worldName(worldUUID + "_the_end").environment(World.Environment.THE_END)));
+
+                    for (Attempt<LoadedMultiverseWorld, CreateFailureReason> world : worlds) {
+                        if (world.isFailure()) {
+                            player.sendMessage(Component.text("Failed to create world " + world.get().getName() + "! Please report this to an administrator.", NamedTextColor.RED));
+                            return;
+                        } else {
+                            world.get().setAutoLoad(false);
+                        }
                     }
-                    worldManager.createWorld(CreateWorldOptions.worldName(worldUUID + "_nether").environment(World.Environment.NETHER));
-                    worldManager.createWorld(CreateWorldOptions.worldName(worldUUID + "_the_end").environment(World.Environment.THE_END));
 
                     // Multiverse-Inventory setup
                     WorldGroupManager groupManager = MultiverseInventoriesApi.get().getWorldGroupManager();
