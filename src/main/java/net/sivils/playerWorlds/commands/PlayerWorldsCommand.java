@@ -1,0 +1,243 @@
+package net.sivils.playerWorlds.commands;
+
+import dev.jorel.commandapi.CommandAPICommand;
+import dev.jorel.commandapi.arguments.*;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.sivils.playerWorlds.PlayerWorlds;
+import net.sivils.playerWorlds.config.Config;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.World;
+import org.bukkit.entity.Player;
+import org.mvplugins.multiverse.core.MultiverseCoreApi;
+import org.mvplugins.multiverse.core.utils.result.Attempt;
+import org.mvplugins.multiverse.core.world.LoadedMultiverseWorld;
+import org.mvplugins.multiverse.core.world.MultiverseWorld;
+import org.mvplugins.multiverse.core.world.WorldManager;
+import org.mvplugins.multiverse.core.world.options.CreateWorldOptions;
+import org.mvplugins.multiverse.core.world.options.DeleteWorldOptions;
+import org.mvplugins.multiverse.core.world.reasons.CreateFailureReason;
+import org.mvplugins.multiverse.external.vavr.control.Option;
+import org.mvplugins.multiverse.inventories.MultiverseInventoriesApi;
+import org.mvplugins.multiverse.inventories.profile.group.WorldGroup;
+import org.mvplugins.multiverse.inventories.profile.group.WorldGroupManager;
+import org.mvplugins.multiverse.inventories.share.Sharables;
+
+import java.io.File;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.util.List;
+
+public class PlayerWorldsCommand {
+
+    public void register(PlayerWorlds plugin) {
+
+
+
+        /*
+            Command for creating a player world
+         */
+        new CommandAPICommand("playerworlds")
+            .withArguments(new LiteralArgument("create"))
+            .executesPlayer((player, args) -> {
+                try {
+                    player.sendMessage(Component.text("Attempting world creation now...", NamedTextColor.GREEN));
+
+                    if (plugin.getDatabase().ownsWorld(player)) {
+                        player.sendMessage(Component.text("You already own a world!", NamedTextColor.RED));
+                        return;
+                    }
+
+                    String worldUUID = plugin.getDatabase().addWorld(player, null);
+
+                    // Multiverse-Core setup
+                    WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
+                    Attempt<LoadedMultiverseWorld, CreateFailureReason> test = worldManager.createWorld(CreateWorldOptions.worldName(worldUUID).environment(World.Environment.NORMAL));
+                    if (test.isFailure()) {
+                        player.sendMessage(Component.text("Failed to create overworld! Please report this to an administrator.", NamedTextColor.RED));
+                        return;
+                    } else {
+                        test.get().setAutoLoad(false);
+                    }
+                    worldManager.createWorld(CreateWorldOptions.worldName(worldUUID + "_nether").environment(World.Environment.NETHER));
+                    worldManager.createWorld(CreateWorldOptions.worldName(worldUUID + "_the_end").environment(World.Environment.THE_END));
+
+                    // Multiverse-Inventory setup
+                    WorldGroupManager groupManager = MultiverseInventoriesApi.get().getWorldGroupManager();
+                    WorldGroup group = groupManager.newEmptyGroup(worldUUID);
+                    group.addWorld(worldUUID);
+                    group.addWorld(worldUUID + "_nether");
+                    group.addWorld(worldUUID + "_the_end");
+                    group.getShares().addAll(Sharables.allOf());
+                    groupManager.updateGroup(group);
+
+                    player.sendMessage(Component.text("Created a new world!", NamedTextColor.GREEN));
+                    Option<MultiverseWorld> world = worldManager.getWorld(worldUUID);
+                    if (world != null) player.teleport(world.get().getSpawnLocation());
+
+                } catch (SQLException e) {
+                    player.sendMessage(Component.text("An error occurred while adding a world to the database. Please report to an administrator.", NamedTextColor.RED));
+                    throw new RuntimeException(e);
+                }
+            })
+            .register();
+
+
+        /*
+            Command for teleporting to player's world
+         */
+        MultiLiteralArgument teleportArgs = new MultiLiteralArgument("Function", "goto", "go", "tp", "teleport");
+        OfflinePlayerArgument playerArg = new OfflinePlayerArgument("Player");
+
+        new CommandAPICommand("playerworlds")
+            .withArguments(teleportArgs)
+            .withOptionalArguments(playerArg)
+            .executesPlayer((player, args) -> {
+                try {
+                    OfflinePlayer offlineTarget = args.getByArgumentOrDefault(playerArg, null);
+
+                    // Go to player's own world
+                    if (offlineTarget == null) {
+                        if (!plugin.getDatabase().ownsWorld(player)) {
+                            player.sendMessage(Component.text("You don't own a world!", NamedTextColor.RED));
+                            return;
+                        }
+
+                        String worldUUID = plugin.getDatabase().getWorld(player);
+                        WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
+                        Option<MultiverseWorld> world = worldManager.getWorld(worldUUID);
+                        if (world == null) {
+                            player.sendMessage(Component.text("There was an error loading your world! Please report to an administrator. Your world UUID: " + worldUUID, NamedTextColor.RED));
+                        } else {
+                            player.teleport(world.get().getSpawnLocation());
+                        }
+                    }
+                    // Teleporting to someone else's world
+                    else {
+                        Player target = offlineTarget.getPlayer();
+                        if (target == null) {
+                            player.sendMessage(Component.text("Target player is null!", NamedTextColor.RED));
+                            return;
+                        }
+
+                        if (!plugin.getDatabase().ownsWorld(target)) {
+                            player.sendMessage(Component.text(target.getName() + " doesn't own a world!", NamedTextColor.RED));
+                            return;
+                        }
+
+                        String worldUUID = plugin.getDatabase().getWorld(target);
+                        WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
+                        Option<MultiverseWorld> world = worldManager.getWorld(worldUUID);
+                        if (world == null) {
+                            player.sendMessage(Component.text("There was an error loading " + target.getName() + " world! Please report to an administrator. Your world UUID: " + worldUUID, NamedTextColor.RED));
+                            return;
+                        }
+                        if (plugin.getDatabase().getWhitelist(worldUUID)) {
+                            player.sendMessage(Component.text(target.getName() + "'s world has whitelist enabled!", NamedTextColor.RED));
+                            return;
+                        }
+                        player.teleport(world.get().getSpawnLocation());
+                    }
+
+                } catch (SQLException e) {
+                    player.sendMessage(Component.text("An error occurred while running this command. Please report to an administrator.", NamedTextColor.RED));
+                    throw new RuntimeException(e);
+                }
+            })
+            .register();
+
+
+        /*
+            Command for deleting one's world
+         */
+        LiteralArgument deleteArg = new LiteralArgument("delete");
+
+        new CommandAPICommand("playerworlds")
+            .withArguments(deleteArg)
+            .executesPlayer((player, args) -> {
+                try {
+                    player.sendMessage(Component.text("Attempting world deletion now...", NamedTextColor.GREEN));
+
+                    if (!plugin.getDatabase().ownsWorld(player)) {
+                        player.sendMessage(Component.text("You don't own a world!", NamedTextColor.RED));
+                        return;
+                    }
+
+                    final String worldUUID = plugin.getDatabase().getWorld(player);
+                    // MultiverseInventories
+                    WorldGroupManager groupManager = MultiverseInventoriesApi.get().getWorldGroupManager();
+                    WorldGroup group = groupManager.getGroup(worldUUID);
+                    groupManager.removeGroup(group);
+
+                    Location spawnLoc = Config.spawnWorld.getSpawnLocation();
+
+                    // MultiverseCore
+                    WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
+                    for (String worldName : group.getWorlds()) {
+                        LoadedMultiverseWorld loadedWorld = worldManager.getLoadedWorld(worldName).get();
+                        for (Player p : loadedWorld.getPlayers().get()) p.teleport(spawnLoc);
+                        worldManager.deleteWorld(DeleteWorldOptions.world(loadedWorld));
+                    }
+                    plugin.getDatabase().removeWorld(player);
+
+                    deleteFolder(new File(Bukkit.getPluginsFolder(), "Multiverse-Inventories/groups/" + worldUUID));
+                    deleteFolder(new File(Bukkit.getPluginsFolder(), "Multiverse-Inventories/worlds/" + worldUUID));
+                    deleteFolder(new File(Bukkit.getPluginsFolder(), "WorldGuard/worlds/" + worldUUID));
+                    deleteFolder(new File(Bukkit.getPluginsFolder(), "WorldGuard/worlds/" + worldUUID + "_nether"));
+                    deleteFolder(new File(Bukkit.getPluginsFolder(), "WorldGuard/worlds/" + worldUUID + "_the_end"));
+
+                    player.sendMessage(Component.text("Deleted your world!", NamedTextColor.GREEN));
+                } catch (SQLException e) {
+                    player.sendMessage(Component.text("There was a database error when deleting your world! Please report to an administrator.", NamedTextColor.RED));
+                    throw new RuntimeException(e);
+                }
+            })
+            .register();
+
+        new CommandAPICommand("playerworlds")
+            .withArguments(new LiteralArgument("getcreationtime"))
+            .executesPlayer((player, args) -> {
+                try {
+                    String worldUUID = plugin.getDatabase().getWorld(player);
+
+                    Timestamp timestamp = plugin.getDatabase().getCreationTime(worldUUID);
+
+                    player.sendMessage(Component.text(timestamp.toString()));
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+            })
+            .register();
+
+        new CommandAPICommand("playerworlds")
+            .withArguments(new LiteralArgument("getallworlds"))
+            .executesPlayer((player, args) -> {
+                try {
+                    List<String> worlds = plugin.getDatabase().getAllWorlds();
+                    String result = String.join(", ", worlds);
+
+                    player.sendMessage(Component.text(result));
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+            })
+            .register();
+    }
+
+    private boolean deleteFolder(File folder) {
+        File[] files = folder.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    if (!deleteFolder(file)) return false;
+                } else {
+                    if (!file.delete()) return false;
+                }
+            }
+        }
+        return folder.delete();
+    }
+
+}
