@@ -6,6 +6,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.sivils.playerWorlds.PlayerWorlds;
 import net.sivils.playerWorlds.config.Config;
+import net.sivils.playerWorlds.database.Database;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
@@ -19,6 +20,7 @@ import org.mvplugins.multiverse.core.world.WorldManager;
 import org.mvplugins.multiverse.core.world.options.CreateWorldOptions;
 import org.mvplugins.multiverse.core.world.options.DeleteWorldOptions;
 import org.mvplugins.multiverse.core.world.reasons.CreateFailureReason;
+import org.mvplugins.multiverse.core.world.reasons.LoadFailureReason;
 import org.mvplugins.multiverse.external.vavr.control.Option;
 import org.mvplugins.multiverse.inventories.MultiverseInventoriesApi;
 import org.mvplugins.multiverse.inventories.profile.group.WorldGroup;
@@ -43,10 +45,9 @@ public class PlayerWorldsCommand {
         new CommandAPICommand("playerworlds")
             .withArguments(new LiteralArgument("create"))
             .executesPlayer((player, args) -> {
+                player.sendMessage(Component.text("Attempting world creation now...", NamedTextColor.GREEN));
                 try {
-                    player.sendMessage(Component.text("Attempting world creation now...", NamedTextColor.GREEN));
-
-                    if (plugin.getDatabase().ownsWorld(player)) {
+                    if (plugin.getDatabase().ownsWorld(player.getUniqueId().toString())) {
                         player.sendMessage(Component.text("You already own a world!", NamedTextColor.RED));
                         return;
                     }
@@ -102,15 +103,17 @@ public class PlayerWorldsCommand {
             .executesPlayer((player, args) -> {
                 try {
                     OfflinePlayer offlineTarget = args.getByArgumentOrDefault(playerArg, null);
+                    Database db = plugin.getDatabase();
 
                     // Go to player's own world
                     if (offlineTarget == null) {
-                        if (!plugin.getDatabase().ownsWorld(player)) {
+                        String playerUUID = player.getUniqueId().toString();
+                        if (!db.ownsWorld(playerUUID)) {
                             player.sendMessage(Component.text("You don't own a world!", NamedTextColor.RED));
                             return;
                         }
 
-                        String worldUUID = plugin.getDatabase().getWorld(player);
+                        String worldUUID = db.getWorld(playerUUID);
                         WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
                         Option<MultiverseWorld> world = worldManager.getWorld(worldUUID);
                         if (world == null) {
@@ -121,29 +124,34 @@ public class PlayerWorldsCommand {
                     }
                     // Teleporting to someone else's world
                     else {
-                        Player target = offlineTarget.getPlayer();
-                        if (target == null) {
-                            player.sendMessage(Component.text("Target player is null!", NamedTextColor.RED));
+                        String targetUUID = offlineTarget.getUniqueId().toString();
+
+                        if (!db.ownsWorld(targetUUID)) {
+                            player.sendMessage(Component.text(offlineTarget.getName() + " doesn't own a world!", NamedTextColor.RED));
                             return;
                         }
 
-                        if (!plugin.getDatabase().ownsWorld(target)) {
-                            player.sendMessage(Component.text(target.getName() + " doesn't own a world!", NamedTextColor.RED));
-                            return;
-                        }
-
-                        String worldUUID = plugin.getDatabase().getWorld(target);
+                        String worldUUID = db.getWorld(targetUUID);
                         WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
                         Option<MultiverseWorld> world = worldManager.getWorld(worldUUID);
                         if (world == null) {
-                            player.sendMessage(Component.text("There was an error loading " + target.getName() + " world! Please report to an administrator. Your world UUID: " + worldUUID, NamedTextColor.RED));
+                            player.sendMessage(Component.text("There was an error loading " + offlineTarget.getName() + "'s world! Please report to an administrator. Your world UUID: " + worldUUID, NamedTextColor.RED));
                             return;
                         }
-                        if (plugin.getDatabase().getWhitelist(worldUUID)) {
-                            player.sendMessage(Component.text(target.getName() + "'s world has whitelist enabled!", NamedTextColor.RED));
+                        // Whitelist logic
+                        if (db.getWhitelist(worldUUID) && !db.getPlayerAccess(worldUUID, player.getUniqueId().toString(), "can_join")) {
+                            player.sendMessage(Component.text(offlineTarget.getName() + "'s world has whitelist enabled!", NamedTextColor.RED));
                             return;
                         }
-                        player.teleport(world.get().getSpawnLocation());
+
+                        MultiverseWorld mvWorld = world.get();
+                        Attempt<LoadedMultiverseWorld, LoadFailureReason> loadedWorld = worldManager.loadWorld(mvWorld);
+                        if (loadedWorld.isFailure()) {
+                            player.sendMessage(Component.text("Failed to load world " + loadedWorld.get().getName() + ". Please report to an administrator.", NamedTextColor.RED));
+                            player.sendMessage(Component.text(loadedWorld.getFailureMessage().toString(), NamedTextColor.RED));
+                            return;
+                        }
+                        player.teleport(mvWorld.getSpawnLocation());
                     }
 
                 } catch (SQLException e) {
@@ -162,15 +170,16 @@ public class PlayerWorldsCommand {
         new CommandAPICommand("playerworlds")
             .withArguments(deleteArg)
             .executesPlayer((player, args) -> {
-                try {
-                    player.sendMessage(Component.text("Attempting world deletion now...", NamedTextColor.GREEN));
+                player.sendMessage(Component.text("Attempting world deletion now...", NamedTextColor.GREEN));
+                String playerUUID = player.getUniqueId().toString();
 
-                    if (!plugin.getDatabase().ownsWorld(player)) {
+                try {
+                    if (!plugin.getDatabase().ownsWorld(playerUUID)) {
                         player.sendMessage(Component.text("You don't own a world!", NamedTextColor.RED));
                         return;
                     }
 
-                    final String worldUUID = plugin.getDatabase().getWorld(player);
+                    final String worldUUID = plugin.getDatabase().getWorld(playerUUID);
                     // MultiverseInventories
                     WorldGroupManager groupManager = MultiverseInventoriesApi.get().getWorldGroupManager();
                     WorldGroup group = groupManager.getGroup(worldUUID);
@@ -185,7 +194,7 @@ public class PlayerWorldsCommand {
                         for (Player p : loadedWorld.getPlayers().get()) p.teleport(spawnLoc);
                         worldManager.deleteWorld(DeleteWorldOptions.world(loadedWorld));
                     }
-                    plugin.getDatabase().removeWorld(player);
+                    plugin.getDatabase().removeWorld(playerUUID);
 
                     deleteFolder(new File(Bukkit.getPluginsFolder(), "Multiverse-Inventories/groups/" + worldUUID));
                     deleteFolder(new File(Bukkit.getPluginsFolder(), "Multiverse-Inventories/worlds/" + worldUUID));
@@ -205,7 +214,7 @@ public class PlayerWorldsCommand {
             .withArguments(new LiteralArgument("getcreationtime"))
             .executesPlayer((player, args) -> {
                 try {
-                    String worldUUID = plugin.getDatabase().getWorld(player);
+                    String worldUUID = plugin.getDatabase().getWorld(player.getUniqueId().toString());
 
                     Timestamp timestamp = plugin.getDatabase().getCreationTime(worldUUID);
 
