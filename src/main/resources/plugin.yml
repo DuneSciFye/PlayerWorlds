@@ -4,5 +4,6 @@ main: net.sivils.playerWorlds.PlayerWorlds
 api-version: '1.21'
 depend:
   - Multiverse-Core
+  - Multiverse-Inventories
 softdepend:
   - PlaceholderAPI

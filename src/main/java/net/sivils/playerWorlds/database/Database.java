@@ -1,12 +1,9 @@
 package net.sivils.playerWorlds.database;
 
-import org.bukkit.entity.Player;
-
 import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 public class Database {
 
@@ -20,18 +17,25 @@ public class Database {
             CREATE TABLE IF NOT EXISTS worlds (
             world_uuid TEXT PRIMARY KEY,
             owner_uuid TEXT NOT NULL,
-            display_name TEXT,
+            display_name TEXT DEFAULT NULL,
             creation_time TIMESTAMP NOT NULL,
-            last_use_time TIMESTAMP,
-            world_settings TEXT,
-            whitelist BOOLEAN)
+            last_use_time TIMESTAMP NOT NULL,
+            deletion_time INT DEFAULT 604800,
+            seed LONG NOT NULL,
+            password TEXT DEFAULT NULL,
+            password_enabled BOOLEAN DEFAULT 0)
         """);
 
             statement.execute("""
             CREATE TABLE IF NOT EXISTS player_accesses (
             world_uuid TEXT NOT NULL,
             player_uuid TEXT NOT NULL,
-            can_join BOOLEAN,
+            player_username TEXT NOT NULL,
+            can_join BOOLEAN DEFAULT NULL,
+            bypass_password BOOLEAN DEFAULT NULL,
+            break_blocks BOOLEAN DEFAULT NULL,
+            place_blocks BOOLEAN DEFAULT NULL,
+            pickup_items BOOLEAN DEFAULT NULL,
             PRIMARY KEY (world_uuid, player_uuid)
             )
             """);
@@ -45,26 +49,28 @@ public class Database {
         }
     }
 
-    /**
-     * Creates a world in the database
-     * @param player
-     * @param displayName
-     * @return World UUID
-     * @throws SQLException if
-     */
-    public String addWorld(Player player, String displayName) throws SQLException {
-        if (ownsWorld(player.getUniqueId().toString())) return null;
+    public void addWorld(String playerUUID, String worldUUID, long seed) throws SQLException {
+        if (ownsWorld(playerUUID)) return;
 
-        String worldUUID = UUID.randomUUID().toString();
-        try (PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO worlds (world_uuid, owner_uuid, display_name, creation_time, last_use_time, world_settings, whitelist) VALUES (?, ?, ?, ?, null, null, null) ")) {
+        try (PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO worlds (world_uuid, " +
+          "owner_uuid, creation_time, last_use_time, seed) VALUES (?, ?, ?, ?, ?) ")) {
             preparedStatement.setString(1, worldUUID);
-            preparedStatement.setString(2, player.getUniqueId().toString());
-            preparedStatement.setString(3, displayName);
+            preparedStatement.setString(2, playerUUID);
+            preparedStatement.setTimestamp(3, Timestamp.from(Instant.now()));
             preparedStatement.setTimestamp(4, Timestamp.from(Instant.now()));
+            preparedStatement.setLong(5, seed);
             preparedStatement.executeUpdate();
         }
 
-        return worldUUID;
+        // Create the default permissions for this world
+        try (PreparedStatement stmt = connection.prepareStatement("INSERT INTO player_accesses (world_uuid, " +
+          "player_uuid, player_username, can_join) VALUES (?, ?, ?, ?) ")) {
+            stmt.setString(1, worldUUID);
+            stmt.setString(2, worldUUID);
+            stmt.setString(3, "");
+            stmt.setBoolean(4, true);
+            stmt.executeUpdate();
+        }
     }
 
     public boolean ownsWorld(String playerUUID) throws SQLException {
@@ -87,28 +93,23 @@ public class Database {
         }
     }
 
-    public void removeWorld(String playerUUID) throws SQLException {
+    public boolean worldExists(String worldUUID) throws SQLException {
+        try (PreparedStatement preparedStatement = connection.prepareStatement("SELECT * FROM worlds WHERE world_uuid = ?")) {
+            preparedStatement.setString(1, worldUUID);
+            ResultSet resultSet = preparedStatement.executeQuery();
+            return resultSet.next();
+        }
+    }
+
+    public void removeWorld(String worldUUID) throws SQLException {
         try (PreparedStatement preparedStatement = connection.prepareStatement("DELETE FROM worlds WHERE world_uuid = ?")) {
-            preparedStatement.setString(1, getWorld(playerUUID));
+            preparedStatement.setString(1, worldUUID);
             preparedStatement.executeUpdate();
         }
 
         try (PreparedStatement preparedStatement = connection.prepareStatement("DELETE FROM player_accesses WHERE world_uuid = ?")) {
-            preparedStatement.setString(1, getWorld(playerUUID));
-            preparedStatement.executeUpdate();
-        }
-    }
-
-    public Timestamp getCreationTime(String worldUUID) throws SQLException {
-        try (PreparedStatement preparedStatement = connection.prepareStatement("SELECT creation_time FROM worlds WHERE world_uuid = ?")) {
             preparedStatement.setString(1, worldUUID);
-            ResultSet resultSet = preparedStatement.executeQuery();
-
-            if (resultSet.next()) {
-                return resultSet.getTimestamp("creation_time");
-            } else {
-                return null;
-            }
+            preparedStatement.executeUpdate();
         }
     }
 
@@ -122,25 +123,45 @@ public class Database {
             return worlds;
         }
     }
-
-    public void setWhitelist(String worldUUID, boolean enabled) throws SQLException {
-        try (PreparedStatement preparedStatement = connection.prepareStatement("UPDATE worlds SET whitelist = ? WHERE world_uuid = ?")) {
-            preparedStatement.setBoolean(1, enabled);
-            preparedStatement.setString(2, worldUUID);
-            preparedStatement.executeUpdate();
+    public void setWorldField(String worldUUID, String column, Object value) throws SQLException {
+        String sql = "UPDATE worlds SET " + column + " = ? WHERE world_uuid = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setObject(1, value);
+            stmt.setString(2, worldUUID);
+            stmt.executeUpdate();
         }
     }
 
-    public boolean getWhitelist(String worldUUID) throws SQLException {
-        try (PreparedStatement preparedStatement = connection.prepareStatement("SELECT whitelist FROM worlds WHERE world_uuid = ?")) {
-            preparedStatement.setString(1, worldUUID);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            return resultSet.next() && resultSet.getBoolean("whitelist");
+    public Object getWorldField(String worldUUID, String column) throws SQLException {
+        String sql = "SELECT " + column + " FROM worlds WHERE world_uuid = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, worldUUID);
+            ResultSet rs = stmt.executeQuery();
+            return rs.next() ? rs.getObject(column) : null;
         }
     }
 
-    public void setPlayerAccess(String worldUUID, String playerUUID, String accessType, boolean accessValue) throws SQLException {
-        if (!playerAccessExists(worldUUID, playerUUID)) createDefaultPlayerAccess(worldUUID, playerUUID);
+    public Boolean getBooleanField(String worldUUID, String column) throws SQLException {
+        String sql = "SELECT " + column + " FROM worlds WHERE world_uuid = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, worldUUID);
+            ResultSet rs = stmt.executeQuery();
+            return rs.next() ? rs.getBoolean(column) : null;
+        }
+    }
+    public Timestamp getTimestampField(String worldUUID, String column) throws SQLException {
+        String sql = "SELECT " + column + " FROM worlds WHERE world_uuid = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, worldUUID);
+            ResultSet rs = stmt.executeQuery();
+            return rs.next() ? rs.getTimestamp(column) : null;
+        }
+    }
+
+
+    public void setPlayerAccess(String worldUUID, String playerUUID, String playerName, String accessType,
+                                boolean accessValue) throws SQLException {
+        if (!playerAccessExists(worldUUID, playerUUID)) createDefaultPlayerAccess(worldUUID, playerUUID, playerName);
 
         String query = "UPDATE player_accesses SET " + accessType + " = ? WHERE world_uuid = ? AND player_uuid = ?";
         try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
@@ -151,13 +172,66 @@ public class Database {
         }
     }
 
+    public void removePlayerAccess(String worldUUID, String playerUUID) throws SQLException {
+        if (!playerAccessExists(worldUUID, playerUUID)) return;
+
+        try (PreparedStatement preparedStatement = connection.prepareStatement("DELETE FROM player_accesses WHERE world_uuid = ? AND player_uuid = ?")) {
+            preparedStatement.setString(1, worldUUID);
+            preparedStatement.setString(2, playerUUID);
+            preparedStatement.executeUpdate();
+        }
+    }
+
     public boolean getPlayerAccess(String worldUUID, String playerUUID, String accessType) throws SQLException {
         String query = "SELECT " + accessType + " FROM player_accesses WHERE world_uuid = ? AND player_uuid = ?";
         try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, worldUUID);
             preparedStatement.setString(2, playerUUID);
             ResultSet resultSet = preparedStatement.executeQuery();
-            return resultSet.next() && resultSet.getBoolean(accessType);
+            // Get default access if specified access isn't available
+            if (!resultSet.next()) {
+                preparedStatement.setString(2, worldUUID);
+                ResultSet resultSet2 = preparedStatement.executeQuery();
+                return resultSet2.next() && resultSet2.getBoolean(accessType);
+            }
+            return resultSet.getBoolean(accessType);
+        }
+    }
+
+    public String getPlayerAccessString(String worldUUID, String playerUUID, String accessType) throws SQLException {
+        String query = "SELECT " + accessType + " FROM player_accesses WHERE world_uuid = ? AND player_uuid = ?";
+        try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
+            preparedStatement.setString(1, worldUUID);
+            preparedStatement.setString(2, playerUUID);
+            ResultSet resultSet = preparedStatement.executeQuery();
+            return resultSet.getString(accessType);
+        }
+    }
+
+    public ArrayList<String> getPlayerAccessesString(String worldUUID, String column) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement("SELECT * FROM player_accesses WHERE " +
+          "world_uuid = ? AND player_uuid != ?")) {
+            stmt.setString(1, worldUUID);
+            stmt.setString(2, worldUUID);
+            ResultSet resultSet = stmt.executeQuery();
+            ArrayList<String> accesses = new ArrayList<>();
+            while (resultSet.next()) {
+                accesses.add(resultSet.getString(column));
+            }
+            return accesses;
+        }
+    }
+    public ArrayList<Boolean> getPlayerAccessesBoolean(String worldUUID, String column) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement("SELECT * FROM player_accesses WHERE " +
+          "world_uuid = ? AND player_uuid != ?")) {
+            stmt.setString(1, worldUUID);
+            stmt.setString(2, worldUUID);
+            ResultSet resultSet = stmt.executeQuery();
+            ArrayList<Boolean> accesses = new ArrayList<>();
+            while (resultSet.next()) {
+                accesses.add(resultSet.getBoolean(column));
+            }
+            return accesses;
         }
     }
 
@@ -170,10 +244,13 @@ public class Database {
         }
     }
 
-    private void createDefaultPlayerAccess(String worldUUID, String playerUUID) throws SQLException {
-        try (PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO player_accesses (world_uuid, player_uuid) VALUES (?, ?)")) {
+
+    public void createDefaultPlayerAccess(String worldUUID, String playerUUID, String playerName) throws SQLException {
+        try (PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO player_accesses " +
+          "(world_uuid, player_uuid, player_username) VALUES (?, ?, ?)")) {
             preparedStatement.setString(1, worldUUID);
             preparedStatement.setString(2, playerUUID);
+            preparedStatement.setString(3, playerName);
             preparedStatement.executeUpdate();
         }
     }
