@@ -19,7 +19,7 @@ public class WorldLoadListener implements Listener {
     World world = p.getWorld();
     String worldName = world.getName();
     if (worldName.length() >= 36) {
-      String worldUUID = world.getName().substring(0, 37);
+      String worldUUID = world.getName().substring(0, 36);
       WorldUtils.unloadWorld(worldUUID);
     }
   }
