@@ -8,6 +8,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.sivils.playerWorlds.PlayerWorlds;
 import net.sivils.playerWorlds.database.Database;
+import net.sivils.playerWorlds.utils.WorldUtils;
 import org.bukkit.Difficulty;
 import org.bukkit.World;
 import org.bukkit.WorldType;
@@ -26,6 +27,7 @@ import org.mvplugins.multiverse.inventories.profile.group.WorldGroupManager;
 import org.mvplugins.multiverse.inventories.share.Sharables;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.UUID;
 
@@ -41,11 +43,14 @@ public class CreateWorld {
     BooleanArgument generateStructuresArg = new BooleanArgument("Generate Structures");
     BooleanArgument pvpArg = new BooleanArgument("PvP");
     BooleanArgument advancementsArg = new BooleanArgument("Allow Advancements");
-    LongArgument seedArg = new LongArgument("Seed");
+    TextArgument seedArg = new TextArgument("Seed");
+    TextArgument generatorArg = new TextArgument("Generator");
+    BooleanArgument cheatsArg = new BooleanArgument("Cheats");
 
     new CommandAPICommand("playerworlds")
       .withArguments(createArg)
-      .withOptionalArguments(worldTypeArg, generateStructuresArg, difficultyArg, pvpArg, advancementsArg, seedArg)
+      .withOptionalArguments(seedArg, worldTypeArg, generateStructuresArg, difficultyArg, pvpArg, advancementsArg,
+        generatorArg, cheatsArg)
       .executes((sender, args) -> {
         Database db = plugin.getDatabase();
         Player player = sender instanceof ProxiedCommandSender proxy ? (Player) proxy.getCallee() : (Player) sender;
@@ -66,7 +71,16 @@ public class CreateWorld {
 
           WorldType worldType = WorldType.getByName(args.getByArgumentOrDefault(worldTypeArg, "NORMAL"));
           boolean generateStructures = args.getByArgumentOrDefault(generateStructuresArg, true);
-          Long seed = args.getByArgument(seedArg);
+          Long seed = null;
+          String rawSeed = args.getByArgument(seedArg);
+          if (rawSeed != null && !rawSeed.isBlank()) {
+            try {
+              seed = Long.parseLong(rawSeed);
+            } catch (NumberFormatException nfe) {
+              seed = (long) rawSeed.hashCode();
+            }
+          }
+          String generator = args.getByArgument(generatorArg);
 
           for (int i = 0; i < worldNames.length; i++) {
             CreateWorldOptions worldOptions = CreateWorldOptions.worldName(worldNames[i])
@@ -76,6 +90,7 @@ public class CreateWorld {
               .generateStructures(generateStructures);
             if (worldType != null) worldOptions.worldType(worldType);
             if (seed != null) worldOptions.seed(seed);
+            if (generator != null && !generator.isBlank()) worldOptions.generator(generator);
 
             Attempt<LoadedMultiverseWorld, CreateFailureReason> attempt = worldManager.createWorld(worldOptions);
             if (attempt.isFailure()) {
@@ -113,8 +128,16 @@ public class CreateWorld {
 
           MultiverseWorld world = worldManager.getWorld(worldUUID).get();
 
+          // Set respawn-world of main world to fix a weird bug where players spawn in Lobby world
+          world.setRespawnWorld(world);
+
           player.teleport(world.getSpawnLocation());
           db.addWorld(player.getUniqueId().toString(), worldUUID, world.getSeed());
+
+          Boolean cheats = args.getByArgument(cheatsArg);
+          if (cheats != null && cheats) db.setWorldField(worldUUID, "cheats_enabled", 1);
+
+          WorldUtils.activeWorldPlugins.put(worldUUID, new ArrayList<>());
 
           DiscordSRV.getPlugin().getMainTextChannel().sendMessage("Creating a new world for " + player.getName() + ".").queue();
 

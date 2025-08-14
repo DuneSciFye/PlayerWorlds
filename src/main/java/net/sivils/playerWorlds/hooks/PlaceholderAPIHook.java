@@ -109,6 +109,9 @@ public class PlaceholderAPIHook extends PlaceholderExpansion {
                 case "activeworlds" -> {
                     return String.join(",", WorldUtils.activeWorldPlugins.keySet());
                 }
+                case "cheatsenabled" -> {
+                    return String.valueOf(db.getBooleanField(worldUUID, "cheats_enabled"));
+                }
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);

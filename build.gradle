@@ -33,7 +33,7 @@ dependencies {
     compileOnly 'me.clip:placeholderapi:2.11.5' // PlaceholderAPI
     compileOnly 'com.discordsrv:discordsrv:1.29.0' // Discord SRV
 
-    implementation "dev.jorel:commandapi-bukkit-shade:10.0.1" // CommandAPI
+    implementation "dev.jorel:commandapi-bukkit-shade:10.1.2" // CommandAPI
     implementation 'org.xerial:sqlite-jdbc:3.49.1.0' // SQLite
 }
 

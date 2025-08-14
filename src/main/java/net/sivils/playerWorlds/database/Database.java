@@ -23,7 +23,8 @@ public class Database {
             deletion_time INT DEFAULT 604800,
             seed LONG NOT NULL,
             password TEXT DEFAULT NULL,
-            password_enabled BOOLEAN DEFAULT 0)
+            password_enabled BOOLEAN DEFAULT 0,
+            cheats_enabled BOOLEAN DEFAULT 0)
         """);
 
             statement.execute("""

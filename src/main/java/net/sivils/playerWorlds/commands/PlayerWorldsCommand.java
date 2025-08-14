@@ -133,6 +133,7 @@ public class PlayerWorldsCommand {
                   final String worldUUID = plugin.getDatabase().getWorld(playerUUID);
 
                   WorldUtils.deleteWorld(worldUUID);
+                  WorldUtils.activeWorldPlugins.remove(worldUUID);
 
                   player.sendMessage(Component.text("Deleted your world!", NamedTextColor.GREEN));
               } catch (SQLException e) {
