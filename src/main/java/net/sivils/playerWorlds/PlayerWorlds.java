@@ -7,8 +7,11 @@ import net.sivils.playerWorlds.config.Config;
 import net.sivils.playerWorlds.database.Database;
 import net.sivils.playerWorlds.hooks.PlaceholderAPIHook;
 import net.sivils.playerWorlds.listeners.WorldLoadListener;
+import net.sivils.playerWorlds.plugins.NotTooExpensive;
+import net.sivils.playerWorlds.plugins.Plugins;
 import net.sivils.playerWorlds.utils.WorldUtils;
 import org.bukkit.Bukkit;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -60,6 +63,7 @@ public final class PlayerWorlds extends JavaPlugin {
             new PlaceholderAPIHook(this);
         }
 
+        registerPlugins();
         registerCommands();
         registerListeners();
 
@@ -107,10 +111,16 @@ public final class PlayerWorlds extends JavaPlugin {
         new RunWorldDeletion().register();
         new SetDeletionTime().register();
         new AccessCommand().register();
+        new PluginsCommand().register(this);
     }
 
     public void registerListeners() {
-        Bukkit.getPluginManager().registerEvents(new WorldLoadListener(), this);
+        PluginManager pm = Bukkit.getPluginManager();
+        pm.registerEvents(new WorldLoadListener(), this);
+    }
+
+    private void registerPlugins() {
+        Plugins.registerPlugin(new NotTooExpensive(), "NotTooExpensive");
     }
 
     public Database getDatabase() {

@@ -112,6 +112,25 @@ public class PlaceholderAPIHook extends PlaceholderExpansion {
                 case "cheatsenabled" -> {
                     return String.valueOf(db.getBooleanField(worldUUID, "cheats_enabled"));
                 }
+                case "lastjoinworlds" -> {
+                    String[] args = parts[1].split(",");
+                    int index = Integer.parseInt(args[0]);
+
+                    String stringWorlds = db.getPlayerInfoField(playerUUID, "last_join_worlds");
+                    String[] worlds = stringWorlds.split(",");
+                    return worlds.length > index ? worlds[index] : "";
+                }
+                case "lastjointimes" -> {
+                    String[] args = parts[1].split(",");
+                    int index = Integer.parseInt(args[0]);
+
+                    String stringTimes = db.getPlayerInfoField(playerUUID, "last_join_times");
+                    String[] times = stringTimes.split(",");
+                    return times.length > index ? times[index] : "";
+                }
+                case "plugins" -> {
+                    return db.getPlugins(worldUUID);
+                }
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);

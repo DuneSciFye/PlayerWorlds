@@ -3,6 +3,7 @@ package net.sivils.playerWorlds.database;
 import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class Database {
@@ -24,7 +25,9 @@ public class Database {
             seed LONG NOT NULL,
             password TEXT DEFAULT NULL,
             password_enabled BOOLEAN DEFAULT 0,
-            cheats_enabled BOOLEAN DEFAULT 0)
+            cheats_enabled BOOLEAN DEFAULT 0,
+            plugins TEXT
+            )
         """);
 
             statement.execute("""
@@ -40,6 +43,14 @@ public class Database {
             PRIMARY KEY (world_uuid, player_uuid)
             )
             """);
+
+            statement.execute("""
+              CREATE TABLE IF NOT EXISTS player_info (
+              player_uuid TEXT NOT NULL,
+              last_join_worlds TEXT,
+              last_join_times TEXT
+              )
+              """);
 
         }
     }
@@ -253,6 +264,78 @@ public class Database {
             preparedStatement.setString(2, playerUUID);
             preparedStatement.setString(3, playerName);
             preparedStatement.executeUpdate();
+        }
+    }
+
+    public void setPlayerInfoField(String playerUUID, String column, Object value) throws SQLException {
+        if (!playerInfoExists(playerUUID)) {
+            try (PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO player_info " +
+              "(player_uuid) VALUES (?)")) {
+                preparedStatement.setString(1, playerUUID);
+                preparedStatement.executeUpdate();
+            }
+        }
+        String sql = "UPDATE player_info SET " + column + " = ? WHERE player_uuid = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setObject(1, value);
+            stmt.setString(2, playerUUID);
+            stmt.executeUpdate();
+        }
+    }
+
+    public String getPlayerInfoField(String playerUUID, String column) throws SQLException {
+        String sql = "SELECT " + column + " FROM player_info WHERE player_uuid = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, playerUUID);
+            ResultSet rs = stmt.executeQuery();
+            return rs.next() ? rs.getString(column) : null;
+        }
+    }
+
+    public boolean playerInfoExists(String playerUUID) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement("SELECT player_uuid FROM player_info " +
+          "WHERE player_uuid = ?")) {
+            stmt.setString(1, playerUUID);
+            ResultSet rs = stmt.executeQuery();
+            return rs.next();
+        }
+    }
+
+    public void enablePlugin(String worldUUID, String pluginName) throws SQLException {
+        try (PreparedStatement stmt =
+               connection.prepareStatement("UPDATE worlds SET plugins = ? WHERE world_uuid = ?")) {
+            stmt.setString(2, worldUUID);
+            String pluginsString = getPlugins(worldUUID);
+            if (pluginsString == null) pluginsString = "";
+            ArrayList<String> plugins = new ArrayList<>(List.of(pluginsString.split(",")));
+            if (!plugins.contains(pluginName)) {
+                plugins.add(pluginName);
+                stmt.setString(1, String.join(",", plugins));
+                stmt.executeUpdate();
+            }
+        }
+    }
+    public void disablePlugin(String worldUUID, String pluginName) throws SQLException {
+        try (PreparedStatement stmt =
+               connection.prepareStatement("UPDATE worlds SET plugins = ? WHERE world_uuid = ?")) {
+            stmt.setString(2, worldUUID);
+            String pluginsString = getPlugins(worldUUID);
+            if (pluginsString == null) pluginsString = "";
+            ArrayList<String> plugins = new ArrayList<>(List.of(pluginsString.split(",")));
+            if (plugins.contains(pluginName)) {
+                plugins.remove(pluginName);
+                stmt.setString(1, String.join(",", plugins));
+                stmt.executeUpdate();
+            }
+        }
+    }
+
+    public String getPlugins(String worldUUID) throws SQLException {
+        String sql = "SELECT plugins FROM worlds WHERE world_uuid = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, worldUUID);
+            ResultSet rs = stmt.executeQuery();
+            return rs.next() ? rs.getString("plugins") : "";
         }
     }
 
