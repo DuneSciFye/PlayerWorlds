@@ -22,16 +22,22 @@ repositories {
     maven { url = "https://repo.onarandombox.com/content/groups/public/" } // Multiverse-Core
     maven { url = 'https://repo.extendedclip.com/content/repositories/placeholderapi/' } // PlaceholderAPI
     maven { url 'https://nexus.scarsz.me/content/groups/public/' } // DiscordSRV
+    maven {
+        name = "jitpack.io"
+        url = "https://jitpack.io/" // GSit
+    }
 
 }
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.5-R0.1-SNAPSHOT") // Required dependency for paper
 
+    compileOnly 'net.luckperms:api:5.4' // LuckPerms
     compileOnly "org.mvplugins.multiverse.core:multiverse-core:5.0.0-SNAPSHOT" // MultiverseCore
     compileOnly "org.mvplugins.multiverse.inventories:multiverse-inventories:5.0.0-SNAPSHOT" // MultiverseInventories
     compileOnly 'me.clip:placeholderapi:2.11.5' // PlaceholderAPI
     compileOnly 'com.discordsrv:discordsrv:1.29.0' // Discord SRV
+    compileOnly "com.github.Gecolay.GSit:core:2.4.3" // GSit
 
     implementation "dev.jorel:commandapi-bukkit-shade:10.1.2" // CommandAPI
     implementation 'org.xerial:sqlite-jdbc:3.49.1.0' // SQLite

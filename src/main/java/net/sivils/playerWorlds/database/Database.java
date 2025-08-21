@@ -3,7 +3,6 @@ package net.sivils.playerWorlds.database;
 import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 public class Database {
@@ -46,7 +45,7 @@ public class Database {
 
             statement.execute("""
               CREATE TABLE IF NOT EXISTS player_info (
-              player_uuid TEXT NOT NULL,
+              player_uuid TEXT NOT NULL PRIMARY KEY,
               last_join_worlds TEXT,
               last_join_times TEXT
               )

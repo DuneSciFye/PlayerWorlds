@@ -18,27 +18,24 @@ public class WorldLoadListener implements Listener {
 
     World world = p.getWorld();
     String worldName = world.getName();
-    if (worldName.length() >= 36) {
-      String worldUUID = world.getName().substring(0, 36);
+    String worldUUID = WorldUtils.getWorldUUID(worldName);
+    if (worldUUID != null)
       WorldUtils.unloadWorld(worldUUID);
-    }
   }
 
   @EventHandler
   public void playerChangeWorld(PlayerChangedWorldEvent e) {
     World worldFrom = e.getFrom();
     String worldFromName = worldFrom.getName();
-    if (worldFromName.length() >= 36) {
-      String worldFromUUID = worldFromName.substring(0, 36);
+    String worldFromUUID = WorldUtils.getWorldUUID(worldFromName);
+    if (worldFromUUID != null)
       WorldUtils.unloadWorld(worldFromUUID);
-    }
 
     World worldTo = e.getPlayer().getWorld();
     String worldToName = worldTo.getName();
-    if (worldToName.length() >= 36) {
-      String worldToUUID = worldToName.substring(0, 36);
+    String worldToUUID = WorldUtils.getWorldUUID(worldToName);
+    if (worldToUUID != null)
       WorldUtils.loadWorld(worldToUUID);
-    }
   }
 
 }

@@ -2,16 +2,19 @@ package net.sivils.playerWorlds;
 
 import dev.jorel.commandapi.CommandAPI;
 import dev.jorel.commandapi.CommandAPIBukkitConfig;
+import net.luckperms.api.LuckPerms;
 import net.sivils.playerWorlds.commands.*;
 import net.sivils.playerWorlds.config.Config;
 import net.sivils.playerWorlds.database.Database;
+import net.sivils.playerWorlds.gamerules.Gamerule;
+import net.sivils.playerWorlds.gamerules.PVP;
 import net.sivils.playerWorlds.hooks.PlaceholderAPIHook;
 import net.sivils.playerWorlds.listeners.WorldLoadListener;
-import net.sivils.playerWorlds.plugins.NotTooExpensive;
-import net.sivils.playerWorlds.plugins.Plugins;
+import net.sivils.playerWorlds.plugins.*;
 import net.sivils.playerWorlds.utils.WorldUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.PluginManager;
+import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -23,6 +26,7 @@ public final class PlayerWorlds extends JavaPlugin {
 
     private Database db;
     private static PlayerWorlds instance;
+    private static LuckPerms luckPerms;
 
     @Override
     public void onLoad() {
@@ -62,7 +66,16 @@ public final class PlayerWorlds extends JavaPlugin {
             logger.info("Detected PlaceholderAPI. Enabling hook for it.");
             new PlaceholderAPIHook(this);
         }
+        if (Bukkit.getServer().getPluginManager().isPluginEnabled("LuckPerms")) {
+            logger.info("Detected LuckPerms. Enabling hook for it.");
+            RegisteredServiceProvider<LuckPerms> provider = Bukkit.getServicesManager().getRegistration(LuckPerms.class);
+            if (provider != null) {
+                luckPerms = provider.getProvider();
+            }
 
+        }
+
+        registerGamerules();
         registerPlugins();
         registerCommands();
         registerListeners();
@@ -112,6 +125,9 @@ public final class PlayerWorlds extends JavaPlugin {
         new SetDeletionTime().register();
         new AccessCommand().register();
         new PluginsCommand().register(this);
+        new TransferCommand().register();
+        new GameruleCommand().register();
+        new CheatsCommand().register();
     }
 
     public void registerListeners() {
@@ -121,6 +137,13 @@ public final class PlayerWorlds extends JavaPlugin {
 
     private void registerPlugins() {
         Plugins.registerPlugin(new NotTooExpensive(), "NotTooExpensive");
+        Plugins.registerPlugin(new DimensionStacking(), "DimensionStacking");
+        Plugins.registerPlugin(new GSit(), "GSit");
+        Plugins.registerPlugin(new TPA(), "TPA");
+    }
+
+    private void registerGamerules() {
+        Gamerule.registerGamerule(new PVP(), "PVP");
     }
 
     public Database getDatabase() {
@@ -129,6 +152,10 @@ public final class PlayerWorlds extends JavaPlugin {
 
     public static PlayerWorlds getInstance() {
         return instance;
+    }
+
+    public static LuckPerms getLuckPerms() {
+        return luckPerms;
     }
 
 }

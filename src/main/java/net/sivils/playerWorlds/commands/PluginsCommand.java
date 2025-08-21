@@ -38,10 +38,12 @@ public class PluginsCommand {
           switch (function) {
             case "enable" -> {
               db.enablePlugin(worldUUID, pluginName);
+              Plugins.getPlugin(pluginName).commandEnable(worldUUID);
               player.sendMessage(Component.text("Successfully enabled plugin " + pluginName, NamedTextColor.GREEN));
             }
             case "disable" -> {
               db.disablePlugin(worldUUID, pluginName);
+              Plugins.getPlugin(pluginName).commandDisable(worldUUID);
               player.sendMessage(Component.text("Successfully disabled plugin " + pluginName, NamedTextColor.GREEN));
             }
           }

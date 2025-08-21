@@ -5,6 +5,7 @@ import net.sivils.playerWorlds.config.Config;
 import net.sivils.playerWorlds.database.Database;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.mvplugins.multiverse.core.MultiverseCoreApi;
 import org.mvplugins.multiverse.core.world.LoadedMultiverseWorld;
@@ -21,9 +22,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 
 public class WorldUtils {
 
@@ -177,6 +176,34 @@ public class WorldUtils {
     }
 
     return message;
+  }
+
+  public static String getWorldUUID(String worldName) {
+    if (worldName.length() >= 36) {
+      String worldUUID = worldName.substring(0, 36);
+      try {
+        if (PlayerWorlds.getInstance().getDatabase().worldExists(worldUUID)) return worldUUID;
+      } catch (SQLException e) {
+        throw new RuntimeException(e);
+      }
+    }
+    return null;
+  }
+
+  public static List<Player> getPlayersInPlayerWorld(String worldName) {
+    String worldUUID = getWorldUUID(worldName);
+    if (worldUUID == null) return null;
+    World world = Bukkit.getWorld(worldName);
+    World nether = Bukkit.getWorld(worldName + "_nether");
+    World end = Bukkit.getWorld(worldName + "_the_end");
+
+    if (world == null || nether == null || end == null) return null;
+
+    List<Player> players = world.getPlayers();
+    players.addAll(nether.getPlayers());
+    players.addAll(end.getPlayers());
+
+    return players;
   }
 
 }

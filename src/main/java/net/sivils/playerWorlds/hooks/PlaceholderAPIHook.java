@@ -3,17 +3,22 @@ package net.sivils.playerWorlds.hooks;
 import me.clip.placeholderapi.PlaceholderAPI;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import net.sivils.playerWorlds.PlayerWorlds;
+import net.sivils.playerWorlds.commands.TransferCommand;
 import net.sivils.playerWorlds.database.Database;
 import net.sivils.playerWorlds.utils.WorldUtils;
+import org.bukkit.GameRule;
 import org.bukkit.OfflinePlayer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.mvplugins.multiverse.core.MultiverseCoreApi;
+import org.mvplugins.multiverse.core.world.WorldManager;
 
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.UUID;
 
 public class PlaceholderAPIHook extends PlaceholderExpansion {
 
@@ -130,6 +135,30 @@ public class PlaceholderAPIHook extends PlaceholderExpansion {
                 }
                 case "plugins" -> {
                     return db.getPlugins(worldUUID);
+                }
+                case "hasincomingtransferrequest" -> {
+                    return String.valueOf(TransferCommand.INCOMING_REQUESTS.containsKey(UUID.fromString(playerUUID)));
+                }
+                case "hasoutgoingtransferrequest" -> {
+                    return String.valueOf(TransferCommand.OUTGOING_REQUESTS.containsKey(UUID.fromString(playerUUID)));
+                }
+                case "pvp" -> {
+                    return String.valueOf(MultiverseCoreApi.get().getWorldManager().getWorld(worldUUID).get().getPvp());
+                }
+                case "difficulty" -> {
+                    return String.valueOf(MultiverseCoreApi.get().getWorldManager().getWorld(worldUUID).get().getDifficulty());
+                }
+                case "isloaded" -> {
+                    return String.valueOf(MultiverseCoreApi.get().getWorldManager().getWorld(worldUUID).get().isLoaded());
+                }
+                case "gamerule" -> {
+                    String[] args = parts[1].split(",");
+                    WorldManager wm = MultiverseCoreApi.get().getWorldManager();
+                    if (!wm.isLoadedWorld(worldUUID)) return "Unloaded world";
+
+                    GameRule<?> gameRule = GameRule.getByName(args[0]);
+                    if (gameRule == null) return "Invalid Gamerule";
+                    return String.valueOf(wm.getLoadedWorld(worldUUID).get().getBukkitWorld().get().getGameRuleValue(gameRule));
                 }
             }
         } catch (SQLException e) {
