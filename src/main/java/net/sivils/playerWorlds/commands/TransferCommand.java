@@ -1,9 +1,9 @@
 package net.sivils.playerWorlds.commands;
 
 import dev.jorel.commandapi.CommandAPICommand;
+import dev.jorel.commandapi.arguments.EntitySelectorArgument;
 import dev.jorel.commandapi.arguments.LiteralArgument;
 import dev.jorel.commandapi.arguments.MultiLiteralArgument;
-import dev.jorel.commandapi.arguments.PlayerArgument;
 import dev.jorel.commandapi.executors.ExecutorType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -30,7 +30,7 @@ public class TransferCommand {
   public void register() {
 
     LiteralArgument transferArg = new LiteralArgument("transfer");
-    PlayerArgument targetArg = new PlayerArgument("Target");
+    EntitySelectorArgument.OnePlayer targetArg = new EntitySelectorArgument.OnePlayer("Target");
     MultiLiteralArgument functionArg = new MultiLiteralArgument("Function", "accept", "deny", "cancel");
 
     new CommandAPICommand("playerworlds")

@@ -3,8 +3,8 @@ package net.sivils.playerWorlds.plugins;
 import dev.jorel.commandapi.CommandAPICommand;
 import dev.jorel.commandapi.arguments.Argument;
 import dev.jorel.commandapi.arguments.ArgumentSuggestions;
+import dev.jorel.commandapi.arguments.EntitySelectorArgument;
 import dev.jorel.commandapi.arguments.MultiLiteralArgument;
-import dev.jorel.commandapi.arguments.PlayerArgument;
 import dev.jorel.commandapi.executors.ExecutorType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -33,7 +33,7 @@ public class TPA extends Plugins {
     MultiLiteralArgument functionArg = new MultiLiteralArgument("Function", "accept", "deny", "reject");
 
     List<Argument<?>> playerArg = new ArrayList<>();
-    playerArg.add(new PlayerArgument("Target")
+    playerArg.add(new EntitySelectorArgument.OnePlayer("Target")
       .replaceSuggestions(ArgumentSuggestions.strings(info ->
         getPlayersInWorld(info.sender())
       ))

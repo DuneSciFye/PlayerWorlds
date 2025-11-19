@@ -1,20 +1,27 @@
 package net.sivils.playerWorlds.commands;
 
+import com.destroystokyo.paper.profile.PlayerProfile;
 import dev.jorel.commandapi.CommandAPICommand;
+import dev.jorel.commandapi.arguments.AsyncPlayerProfileArgument;
 import dev.jorel.commandapi.arguments.BooleanArgument;
 import dev.jorel.commandapi.arguments.LiteralArgument;
 import dev.jorel.commandapi.arguments.MultiLiteralArgument;
-import dev.jorel.commandapi.arguments.OfflinePlayerArgument;
 import dev.jorel.commandapi.executors.ExecutorType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.sivils.playerWorlds.PlayerWorlds;
+import net.sivils.playerWorlds.database.Cache;
 import net.sivils.playerWorlds.database.Database;
-import org.bukkit.OfflinePlayer;
-import org.bukkit.command.ProxiedCommandSender;
+import net.sivils.playerWorlds.database.PlayerAccess;
+import net.sivils.playerWorlds.database.WorldData;
+import net.sivils.playerWorlds.utils.CommandUtils;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
-import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 public class AccessCommand {
 
@@ -24,35 +31,64 @@ public class AccessCommand {
 
     MultiLiteralArgument accessTypeArg = new MultiLiteralArgument("Access Type", "can_join", "bypass_password", "break_blocks", "place_blocks", "pickup_items");
     BooleanArgument valueArg = new BooleanArgument("Value");
-    OfflinePlayerArgument targetArg = new OfflinePlayerArgument("Target");
+    AsyncPlayerProfileArgument targetArg = new AsyncPlayerProfileArgument("Player");
 
     new CommandAPICommand("playerworlds")
       .withArguments(new LiteralArgument("access"), new LiteralArgument("set"))
       .withArguments(accessTypeArg, valueArg)
       .withOptionalArguments(targetArg)
       .executes((sender, args) -> {
-        Player player = sender instanceof ProxiedCommandSender proxy ? (Player) proxy.getCallee() : (Player) sender;
+        final Player player = CommandUtils.getPlayer(sender);
+        final UUID playerUUID = player.getUniqueId();
+        final String accessType = args.getByArgument(accessTypeArg);
+        final boolean value = args.getByArgument(valueArg);
 
-        try {
-          String playerUUID = player.getUniqueId().toString();
-          String worldUUID = db.getWorld(playerUUID);
-          String accessType = args.getByArgument(accessTypeArg);
-          boolean value = args.getByArgument(valueArg);
-          OfflinePlayer target = args.getByArgument(targetArg);
+        Cache cache = PlayerWorlds.getCache();
 
-          if (target == null) { // Setting value for default perms
-            db.setPlayerAccess(worldUUID, worldUUID, "", accessType, value);
+        ArrayList<String> ownedWorlds = cache.getPlayersWorlds(playerUUID);
+        if (ownedWorlds == null || ownedWorlds.isEmpty()) {
+          player.sendMessage(Component.text("You don't own any worlds!", NamedTextColor.RED));
+          return;
+        }
+
+        final String worldUUID = ownedWorlds.getFirst();
+
+        // Getting target player
+        final CompletableFuture<List<PlayerProfile>> profiles = args.getByArgumentOrDefault(targetArg, null);
+
+        profiles.thenAccept(profileList -> {
+          if (profileList == null || profileList.isEmpty()) { // Setting value for default perms
+            WorldData worldData = cache.getCachedWorldData(worldUUID);
+            PlayerAccess playerAccess = worldData.defaultPlayerAccess();
+
+            // Setting new values in Player Access
+            playerAccess = playerAccess.updateAccess(accessType, value);
+            worldData = worldData.withDefaultPlayerAccess(playerAccess);
+
+            cache.setCachedWorldData(worldUUID, worldData);
             player.sendMessage(Component.text("Successfully updated access for default permissions!",
               NamedTextColor.GREEN));
           } else { // Setting value for a specified player
-            String targetName = args.getRaw("Target");
-            db.setPlayerAccess(worldUUID, target.getUniqueId().toString(), targetName, accessType, value);
+            final UUID targetUUID = profileList.getFirst().getId();
+            final String targetName = Bukkit.getOfflinePlayer(targetUUID).getName();
+            PlayerAccess playerAccess = cache.getCachedPlayerAccess(worldUUID, targetUUID);
+
+            // Setting new values in Player Access
+            playerAccess = playerAccess.updateAccess(accessType, value);
+
+            cache.setCachedPlayerAccess(worldUUID, targetUUID, playerAccess);
             player.sendMessage(Component.text("Successfully updated access for " + targetName + "!",
               NamedTextColor.GREEN));
           }
-        } catch (SQLException e) {
-          throw new RuntimeException(e);
-        }
+
+        }).exceptionally(throwable -> {
+          // We have to partly handle exceptions ourselves, since we are using a CompletableFuture
+          Throwable cause = throwable.getCause();
+          Throwable rootCause = cause instanceof RuntimeException ? cause.getCause() : cause;
+
+          sender.sendMessage(rootCause.getMessage());
+          return null;
+        });
       }, ExecutorType.PLAYER, ExecutorType.PROXY)
       .register();
 
@@ -61,19 +97,33 @@ public class AccessCommand {
       .withArguments(new LiteralArgument("access"), new LiteralArgument("remove"))
       .withArguments(targetArg)
       .executes((sender, args) -> {
-        Player player = sender instanceof ProxiedCommandSender proxy ? (Player) proxy.getCallee() : (Player) sender;
+        final Player player = CommandUtils.getPlayer(sender);
+        final UUID playerUUID = player.getUniqueId();
 
-        try {
-          String playerUUID = player.getUniqueId().toString();
-          String worldUUID = db.getWorld(playerUUID);
-          String targetUUID = args.getByArgument(targetArg).getUniqueId().toString();
+        final CompletableFuture<List<PlayerProfile>> profiles = args.getByArgumentOrDefault(targetArg, null);
 
-          db.removePlayerAccess(worldUUID, targetUUID);
+        profiles.thenAccept(profileList -> {
+          Cache cache = PlayerWorlds.getCache();
+          final ArrayList<String> ownedWorlds = cache.getPlayersWorlds(playerUUID);
+          if (ownedWorlds == null || ownedWorlds.isEmpty()) {
+            player.sendMessage(Component.text("You don't own any worlds!", NamedTextColor.RED));
+            return;
+          }
+          final String worldUUID = ownedWorlds.getFirst();
+          final UUID targetUUID = profileList.getFirst().getId();
+
+          cache.deletePlayerAccess(worldUUID, targetUUID);
           player.sendMessage(Component.text("Successfully removed player access for " + args.getRaw("Target") + "!",
             NamedTextColor.GREEN));
-        } catch (SQLException e) {
-          throw new RuntimeException(e);
-        }
+
+        }).exceptionally(throwable -> {
+          // We have to partly handle exceptions ourselves, since we are using a CompletableFuture
+          Throwable cause = throwable.getCause();
+          Throwable rootCause = cause instanceof RuntimeException ? cause.getCause() : cause;
+
+          sender.sendMessage(rootCause.getMessage());
+          return null;
+        });
 
       }, ExecutorType.PLAYER, ExecutorType.PROXY)
       .register();
@@ -83,25 +133,37 @@ public class AccessCommand {
       .withArguments(new LiteralArgument("access"), new LiteralArgument("add"))
       .withArguments(targetArg)
       .executes((sender, args) -> {
-        Player player = sender instanceof ProxiedCommandSender proxy ? (Player) proxy.getCallee() : (Player) sender;
+        final Player player = CommandUtils.getPlayer(sender);
+        final UUID playerUUID = player.getUniqueId();
 
-        try {
-          String playerUUID = player.getUniqueId().toString();
-          String worldUUID = db.getWorld(playerUUID);
-          String targetUUID = args.getByArgument(targetArg).getUniqueId().toString();
-          String targetName = args.getRaw("Target");
+        final CompletableFuture<List<PlayerProfile>> profiles = args.getByArgumentOrDefault(targetArg, null);
 
-          if (db.playerAccessExists(worldUUID, targetUUID)) {
+        profiles.thenAccept(profileList -> {
+          Cache cache = PlayerWorlds.getCache();
+          final ArrayList<String> ownedWorlds = cache.getPlayersWorlds(playerUUID);
+          if (ownedWorlds.isEmpty()) {
+            player.sendMessage(Component.text("You don't own any worlds!", NamedTextColor.RED));
+            return;
+          }
+
+          final UUID targetUUID = profileList.getFirst().getId();
+          final String worldUUID = ownedWorlds.getFirst();
+          final String targetName = Bukkit.getOfflinePlayer(targetUUID).getName();
+
+          if (cache.getCachedPlayerAccess(worldUUID, targetUUID) != null) {
             player.sendMessage(Component.text(targetName + " is already defined!", NamedTextColor.RED));
             return;
           }
 
-          db.createDefaultPlayerAccess(worldUUID, targetUUID, targetName);
-          player.sendMessage(Component.text("Successfully added player access for " + targetName + "!",
-            NamedTextColor.GREEN));
-        } catch (SQLException e) {
-          throw new RuntimeException(e);
-        }
+          cache.setCachedPlayerAccess(worldUUID, targetUUID, new PlayerAccess(
+            true,
+            targetName,
+            null,
+            null,
+            null,
+            null,
+            null));
+        });
 
       }, ExecutorType.PLAYER, ExecutorType.PROXY)
       .register();

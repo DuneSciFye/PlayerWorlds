@@ -1,6 +1,5 @@
 package net.sivils.playerWorlds.listeners;
 
-import net.sivils.playerWorlds.config.Config;
 import net.sivils.playerWorlds.utils.WorldUtils;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -13,14 +12,6 @@ public class WorldLoadListener implements Listener {
 
   @EventHandler
   public void onPlayerQuit(PlayerQuitEvent e) {
-    Player p = e.getPlayer();
-    p.teleport(Config.spawnLocation);
-
-    World world = p.getWorld();
-    String worldName = world.getName();
-    String worldUUID = WorldUtils.getWorldUUID(worldName);
-    if (worldUUID != null)
-      WorldUtils.unloadWorld(worldUUID);
   }
 
   @EventHandler

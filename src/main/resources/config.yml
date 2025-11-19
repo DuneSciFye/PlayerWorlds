@@ -1,2 +1,6 @@
 SpawnWorld: Lobby
 SpawnCoords: 100 0 100
+
+
+Messages:
+  DoesntOwnWorld: "&cYou don't own a world!"

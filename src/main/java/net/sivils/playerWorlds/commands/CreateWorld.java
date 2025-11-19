@@ -7,12 +7,15 @@ import github.scarsz.discordsrv.DiscordSRV;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.sivils.playerWorlds.PlayerWorlds;
-import net.sivils.playerWorlds.database.Database;
+import net.sivils.playerWorlds.database.Cache;
+import net.sivils.playerWorlds.database.PlayerAccess;
+import net.sivils.playerWorlds.database.WorldData;
+import net.sivils.playerWorlds.utils.CommandUtils;
 import net.sivils.playerWorlds.utils.WorldUtils;
+import org.bukkit.Bukkit;
 import org.bukkit.Difficulty;
 import org.bukkit.World;
 import org.bukkit.WorldType;
-import org.bukkit.command.ProxiedCommandSender;
 import org.bukkit.entity.Player;
 import org.mvplugins.multiverse.core.MultiverseCoreApi;
 import org.mvplugins.multiverse.core.utils.result.Attempt;
@@ -26,10 +29,12 @@ import org.mvplugins.multiverse.inventories.profile.group.WorldGroup;
 import org.mvplugins.multiverse.inventories.profile.group.WorldGroupManager;
 import org.mvplugins.multiverse.inventories.share.Sharables;
 
-import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 public class CreateWorld {
 
@@ -52,57 +57,69 @@ public class CreateWorld {
       .withOptionalArguments(seedArg, worldTypeArg, generateStructuresArg, difficultyArg, pvpArg, advancementsArg,
         generatorArg, cheatsArg)
       .executes((sender, args) -> {
-        Database db = plugin.getDatabase();
-        Player player = sender instanceof ProxiedCommandSender proxy ? (Player) proxy.getCallee() : (Player) sender;
+        final Player player = CommandUtils.getPlayer(sender);
+        final UUID playerUUID = player.getUniqueId();
 
         player.sendMessage(Component.text("Attempting world creation now...", NamedTextColor.GREEN));
-        try {
-          if (db.ownsWorld(player.getUniqueId().toString())) {
-            player.sendMessage(Component.text("You already own a world!", NamedTextColor.RED));
+
+        Cache cache = PlayerWorlds.getCache();
+
+        ArrayList<String> ownedWorlds = cache.getPlayersWorlds(playerUUID);
+        if (ownedWorlds != null && !ownedWorlds.isEmpty()) {
+          player.sendMessage(Component.text("You already own a world!", NamedTextColor.RED));
+          return;
+        }
+
+        String worldUUID = UUID.randomUUID().toString();
+        String[] worldNames = {worldUUID, worldUUID + "_nether", worldUUID + "_the_end"};
+        World.Environment[] environments = {World.Environment.NORMAL, World.Environment.NETHER, World.Environment.THE_END};
+
+        // Multiverse-Core setup
+        WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
+
+        WorldType worldType = WorldType.getByName(args.getByArgumentOrDefault(worldTypeArg, "NORMAL"));
+        boolean generateStructures = args.getByArgumentOrDefault(generateStructuresArg, true);
+        Long seed = null;
+        String rawSeed = args.getByArgument(seedArg);
+        if (rawSeed != null && !rawSeed.isBlank()) {
+          try {
+            seed = Long.parseLong(rawSeed);
+          } catch (NumberFormatException nfe) {
+            seed = (long) rawSeed.hashCode();
+          }
+        }
+
+        final Long seed2 = seed;
+        String generator = args.getByArgument(generatorArg);
+
+        // CF for creating the worlds
+        CompletableFuture<Byte> cf = new  CompletableFuture<>();
+
+        for (int i = 0; i < worldNames.length; i++) {
+          CreateWorldOptions worldOptions = CreateWorldOptions.worldName(worldNames[i])
+            .environment(environments[i])
+            .doFolderCheck(true)
+            .useSpawnAdjust(true)
+            .generateStructures(generateStructures);
+          if (worldType != null) worldOptions.worldType(worldType);
+          if (seed2 != null) worldOptions.seed(seed2);
+          if (generator != null && !generator.isBlank()) worldOptions.generator(generator);
+
+          Attempt<LoadedMultiverseWorld, CreateFailureReason> attempt = worldManager.createWorld(worldOptions);
+          if (attempt.isFailure()) {
+            player.sendMessage(Component.text("Failed to create world " + attempt.get().getName() + "! " +
+              "Failure Reason: " + attempt.getFailureReason().toString() + ". Please report " +
+              "this to an administrator.", NamedTextColor.RED));
             return;
+          } else {
+            attempt.get().setAutoLoad(false);
           }
+        }
+//        cf.complete((byte) 1);
+//        Bukkit.getScheduler().runTaskAsynchronously(PlayerWorlds.getInstance(), () -> {
+//        });
 
-          String worldUUID = UUID.randomUUID().toString();
-          String[] worldNames = {worldUUID, worldUUID + "_nether", worldUUID + "_the_end"};
-          World.Environment[] environments = {World.Environment.NORMAL, World.Environment.NETHER, World.Environment.THE_END};
-
-          // Multiverse-Core setup
-          WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
-
-          WorldType worldType = WorldType.getByName(args.getByArgumentOrDefault(worldTypeArg, "NORMAL"));
-          boolean generateStructures = args.getByArgumentOrDefault(generateStructuresArg, true);
-          Long seed = null;
-          String rawSeed = args.getByArgument(seedArg);
-          if (rawSeed != null && !rawSeed.isBlank()) {
-            try {
-              seed = Long.parseLong(rawSeed);
-            } catch (NumberFormatException nfe) {
-              seed = (long) rawSeed.hashCode();
-            }
-          }
-          String generator = args.getByArgument(generatorArg);
-
-          for (int i = 0; i < worldNames.length; i++) {
-            CreateWorldOptions worldOptions = CreateWorldOptions.worldName(worldNames[i])
-              .environment(environments[i])
-              .doFolderCheck(true)
-              .useSpawnAdjust(true)
-              .generateStructures(generateStructures);
-            if (worldType != null) worldOptions.worldType(worldType);
-            if (seed != null) worldOptions.seed(seed);
-            if (generator != null && !generator.isBlank()) worldOptions.generator(generator);
-
-            Attempt<LoadedMultiverseWorld, CreateFailureReason> attempt = worldManager.createWorld(worldOptions);
-            if (attempt.isFailure()) {
-              player.sendMessage(Component.text("Failed to create world " + attempt.get().getName() + "! " +
-                "Failure Reason: " + attempt.getFailureReason().toString() + ". Please report " +
-                "this to an administrator.", NamedTextColor.RED));
-              return;
-            } else {
-              attempt.get().setAutoLoad(false);
-            }
-
-          }
+//        cf.whenComplete((result, throwable) -> {
 
           // Multiverse-Inventory setup
           WorldGroupManager groupManager = MultiverseInventoriesApi.get().getWorldGroupManager();
@@ -125,6 +142,7 @@ public class CreateWorld {
             Boolean allowAdvancements = args.getByArgument(advancementsArg);
             if (allowAdvancements != null) world.setAllowAdvancementGrant(allowAdvancements);
           }
+          Boolean cheats = args.getByArgumentOrDefault(cheatsArg, false);
 
           MultiverseWorld world = worldManager.getWorld(worldUUID).get();
 
@@ -132,20 +150,37 @@ public class CreateWorld {
           world.setRespawnWorld(world);
 
           player.teleport(world.getSpawnLocation());
-          db.addWorld(player.getUniqueId().toString(), worldUUID, world.getSeed());
-
-          Boolean cheats = args.getByArgument(cheatsArg);
-          if (cheats != null && cheats) db.setWorldField(worldUUID, "cheats_enabled", 1);
+          cache.setCachedWorldData(worldUUID, new WorldData(
+            true,
+            worldUUID,
+            playerUUID.toString(),
+            player.getName(),
+            Timestamp.from(Instant.now()),
+            Timestamp.from(Instant.now()),
+            604800,
+            world.getSeed(),
+            null,
+            false,
+            cheats,
+            "",
+            new PlayerAccess(
+              false,
+              player.getName(),
+              true,
+              false,
+              true,
+              true,
+              true
+            )
+          ));
+          ownedWorlds.add(worldUUID);
+          cache.setPlayersWorlds(playerUUID, ownedWorlds);
 
           WorldUtils.activeWorldPlugins.put(worldUUID, new ArrayList<>());
 
           DiscordSRV.getPlugin().getMainTextChannel().sendMessage("Creating a new world for " + player.getName() + ".").queue();
+//        });
 
-        } catch (SQLException e) {
-          player.sendMessage(Component.text("An error occurred while adding a world to the database. Please report " +
-            "to an administrator.", NamedTextColor.RED));
-          throw new RuntimeException(e);
-        }
       }, ExecutorType.PLAYER, ExecutorType.PROXY)
       .register();
 

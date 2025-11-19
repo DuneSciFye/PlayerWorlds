@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'net.sivils'
-version = '1.0.0'
+version = '2.0.0'
 
 repositories {
     mavenCentral()
@@ -39,7 +39,7 @@ dependencies {
     compileOnly 'com.discordsrv:discordsrv:1.29.0' // Discord SRV
     compileOnly "com.github.Gecolay.GSit:core:2.4.3" // GSit
 
-    implementation "dev.jorel:commandapi-bukkit-shade:10.1.2" // CommandAPI
+    implementation "dev.jorel:commandapi-paper-shade:11.0.0" // CommandAPI
     implementation 'org.xerial:sqlite-jdbc:3.49.1.0' // SQLite
 }
 
@@ -83,5 +83,17 @@ processResources {
     filteringCharset 'UTF-8'
     filesMatching('plugin.yml') {
         expand props
+    }
+}
+
+tasks.jar {
+    manifest {
+        attributes["paperweight-mappings-namespace"] = "mojang"
+    }
+}
+// if you have shadowJar configured
+tasks.shadowJar {
+    manifest {
+        attributes["paperweight-mappings-namespace"] = "mojang"
     }
 }

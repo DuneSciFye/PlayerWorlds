@@ -1,10 +1,12 @@
 package net.sivils.playerWorlds;
 
 import dev.jorel.commandapi.CommandAPI;
-import dev.jorel.commandapi.CommandAPIBukkitConfig;
+import dev.jorel.commandapi.CommandAPIPaperConfig;
+import dev.jorel.commandapi.network.CommandAPIProtocol;
 import net.luckperms.api.LuckPerms;
 import net.sivils.playerWorlds.commands.*;
 import net.sivils.playerWorlds.config.Config;
+import net.sivils.playerWorlds.database.Cache;
 import net.sivils.playerWorlds.database.Database;
 import net.sivils.playerWorlds.gamerules.Gamerule;
 import net.sivils.playerWorlds.gamerules.PVP;
@@ -27,10 +29,11 @@ public final class PlayerWorlds extends JavaPlugin {
     private Database db;
     private static PlayerWorlds instance;
     private static LuckPerms luckPerms;
+    private static Cache cache;
 
     @Override
     public void onLoad() {
-        CommandAPI.onLoad(new CommandAPIBukkitConfig(this));
+        CommandAPI.onLoad(new CommandAPIPaperConfig(this));
     }
 
 
@@ -39,8 +42,17 @@ public final class PlayerWorlds extends JavaPlugin {
         instance = this;
         Logger logger = this.getLogger();
 
+        // CommandAPI Stuff
         CommandAPI.onEnable();
+        Bukkit.getScheduler().runTaskLater(PlayerWorlds.getInstance(), () -> {
+            for (String channel : CommandAPIProtocol.getAllChannelIdentifiers()) {
+                Bukkit.getMessenger().unregisterIncomingPluginChannel(this, channel);
+                Bukkit.getMessenger().unregisterOutgoingPluginChannel(this, channel);
+            }
+        }, 20L);
 
+
+        // Create Database
         try {
             if (!getDataFolder().exists()) {
                 if (!getDataFolder().mkdirs()) logger.severe("Failed to create data folder.");
@@ -54,14 +66,6 @@ public final class PlayerWorlds extends JavaPlugin {
         }
 
         // Hooks
-        if (!Bukkit.getServer().getPluginManager().isPluginEnabled("Multiverse-Core")) {
-            logger.severe("Multiverse-Core not found. Disabling plugin.");
-            Bukkit.getPluginManager().disablePlugin(this);
-        }
-        if (!Bukkit.getServer().getPluginManager().isPluginEnabled("Multiverse-Inventories")) {
-            logger.severe("Multiverse-Inventories not found. Disabling plugin.");
-            Bukkit.getPluginManager().disablePlugin(this);
-        }
         if (Bukkit.getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             logger.info("Detected PlaceholderAPI. Enabling hook for it.");
             new PlaceholderAPIHook(this);
@@ -75,10 +79,14 @@ public final class PlayerWorlds extends JavaPlugin {
 
         }
 
+        // Register stuff
         registerGamerules();
         registerPlugins();
         registerCommands();
         registerListeners();
+
+        // Setup Cache
+        cache = new Cache();
 
         new BukkitRunnable() {
             @Override
@@ -150,12 +158,24 @@ public final class PlayerWorlds extends JavaPlugin {
         return db;
     }
 
+    /**
+     * Obtains the main instance of PlayerWorlds
+     * @return Instance of PlayerWorlds
+     */
     public static PlayerWorlds getInstance() {
         return instance;
     }
 
     public static LuckPerms getLuckPerms() {
         return luckPerms;
+    }
+
+    /**
+     * Obtains the main Cache of PlayerWorlds
+     * @return Cache of Database Data
+     */
+    public static Cache getCache() {
+        return cache;
     }
 
 }

@@ -1,18 +1,25 @@
 package net.sivils.playerWorlds.utils;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.sivils.playerWorlds.PlayerWorlds;
 import net.sivils.playerWorlds.config.Config;
+import net.sivils.playerWorlds.database.Cache;
 import net.sivils.playerWorlds.database.Database;
+import net.sivils.playerWorlds.database.PlayerInfo;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.jetbrains.annotations.NotNull;
 import org.mvplugins.multiverse.core.MultiverseCoreApi;
+import org.mvplugins.multiverse.core.utils.result.Attempt;
 import org.mvplugins.multiverse.core.world.LoadedMultiverseWorld;
 import org.mvplugins.multiverse.core.world.MultiverseWorld;
 import org.mvplugins.multiverse.core.world.WorldManager;
 import org.mvplugins.multiverse.core.world.options.DeleteWorldOptions;
 import org.mvplugins.multiverse.core.world.options.UnloadWorldOptions;
+import org.mvplugins.multiverse.core.world.reasons.LoadFailureReason;
 import org.mvplugins.multiverse.inventories.MultiverseInventoriesApi;
 import org.mvplugins.multiverse.inventories.profile.group.WorldGroup;
 import org.mvplugins.multiverse.inventories.profile.group.WorldGroupManager;
@@ -23,6 +30,8 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+
+import static net.sivils.playerWorlds.utils.Utils.prependAndLimit;
 
 public class WorldUtils {
 
@@ -52,7 +61,7 @@ public class WorldUtils {
     }
   }
 
-  public static void unloadWorld(String worldUUID) {
+  public static void unloadWorld(@NotNull String worldUUID) {
     try {
       if (!db.worldExists(worldUUID)) return;
 
@@ -110,6 +119,17 @@ public class WorldUtils {
     groupManager.removeGroup(group);
     db.removeWorld(worldUUID);
 
+    // Remove plugins
+    WorldUtils.activeWorldPlugins.remove(worldUUID);
+
+    // Remove from Cache
+    Cache cache = PlayerWorlds.getCache();
+    if (cache.removeCachedWorldData(worldUUID)) {
+      PlayerWorlds.getInstance().getLogger().warning("Tried to remove world " + worldUUID + " from cache when " +
+        "deleting world, but it wasn't in Cache.");
+    }
+
+    // Deleting files
     deleteFolder(new File(Bukkit.getPluginsFolder(), "Multiverse-Inventories/groups/" + worldUUID));
     deleteFolder(new File(Bukkit.getPluginsFolder(), "Multiverse-Inventories/worlds/" + worldUUID));
     deleteFolder(new File(Bukkit.getPluginsFolder(), "WorldGuard/worlds/" + worldUUID));
@@ -204,6 +224,39 @@ public class WorldUtils {
     players.addAll(end.getPlayers());
 
     return players;
+  }
+
+  public static void goToWorld(String worldUUID, Player player, Cache cache) {
+    final UUID playerUUID = player.getUniqueId();
+    final WorldManager worldManager = MultiverseCoreApi.get().getWorldManager();
+    final MultiverseWorld world = worldManager.getWorld(worldUUID).get();
+
+    // Loading World
+    if (!world.isLoaded()) {
+      Attempt<LoadedMultiverseWorld, LoadFailureReason> loadedWorld = worldManager.loadWorld(worldUUID);
+
+      if (loadedWorld.isFailure()) {
+        player.sendMessage(Component.text("Failed to load world " + loadedWorld.get().getName() + ". Please report to an administrator.", NamedTextColor.RED));
+        player.sendMessage(Component.text(loadedWorld.getFailureMessage().toString(), NamedTextColor.RED));
+        return;
+      }
+    }
+
+    WorldUtils.loadWorld(worldUUID);
+
+    player.teleport(world.getSpawnLocation());
+
+    // Set Last Join Worlds and Last Join Times
+    final PlayerInfo playerInfo = cache.getCachedPlayerInfo(playerUUID);
+    if (playerInfo == null) return;
+
+    final String worldUUIDs = prependAndLimit(playerInfo.lastJoinWorlds(), worldUUID, 5);
+    final String times = prependAndLimit(playerInfo.lastJoinTimes(), Timestamp.from(Instant.now()).toString(), 5);
+
+    cache.setCachedPlayerInfo(playerUUID,
+      playerInfo.withLastJoinWorlds(worldUUIDs).withLastJoinTimes(times)
+    );
+
   }
 
 }

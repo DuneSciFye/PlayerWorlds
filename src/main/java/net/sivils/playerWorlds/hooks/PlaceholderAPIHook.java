@@ -77,8 +77,7 @@ public class PlaceholderAPIHook extends PlaceholderExpansion {
                 }
                 case "playeraccess" -> {
                     String[] args = parts[1].split(",");
-                    ;
-                    ArrayList<String> accesses = db.getPlayerAccessesString(worldUUID, args[0]);
+                  ArrayList<String> accesses = db.getPlayerAccessesString(worldUUID, args[0]);
                     accesses.addFirst(db.getPlayerAccessString(worldUUID, worldUUID, args[0])); // Default permissions come first
                     int i = Integer.parseInt(args[1]);
                     return i < accesses.size() ? accesses.get(i) : "";

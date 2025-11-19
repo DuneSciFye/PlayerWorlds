@@ -1,9 +1,13 @@
 package net.sivils.playerWorlds.database;
 
+import net.sivils.playerWorlds.PlayerWorlds;
+
 import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.UUID;
 
 public class Database {
 
@@ -92,6 +96,12 @@ public class Database {
         }
     }
 
+    /**
+     * Gets the UUID of the world a player owns, or null if none
+     * @param playerUUID The String UUID of the player
+     * @return String UUID of the world the player owns
+     * @throws SQLException for any database error
+     */
     public String getWorld(String playerUUID) throws SQLException {
         try (PreparedStatement preparedStatement = connection.prepareStatement("SELECT world_uuid FROM worlds WHERE owner_uuid = ?")) {
             preparedStatement.setString(1, playerUUID);
@@ -335,6 +345,110 @@ public class Database {
             stmt.setString(1, worldUUID);
             ResultSet rs = stmt.executeQuery();
             return rs.next() ? rs.getString("plugins") : "";
+        }
+    }
+
+    /**
+     * Gets all of the stored SQLite data of a world
+     * @param worldUUID The String UUID of the World to get data of
+     * @return The WorldData of the World
+     * @throws SQLException Throws a Database Exception
+     */
+    public WorldData getWorldData(String worldUUID) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement("SELECT * FROM worlds WHERE world_uuid = ?")) {
+            stmt.setString(1, worldUUID);
+            ResultSet rs = stmt.executeQuery();
+            if (!rs.next()) return null;
+
+            return new WorldData(
+              false,
+              worldUUID,
+              rs.getString("owner_uuid"),
+              rs.getString("display_name"),
+              rs.getTimestamp("creation_time"),
+              rs.getTimestamp("last_use_time"),
+              rs.getInt("deletion_time"),
+              rs.getLong("seed"),
+              rs.getString("password"),
+              rs.getBoolean("password_enabled"),
+              rs.getBoolean("cheats_enabled"),
+              rs.getString("plugins"),
+              getPlayerAccessData(worldUUID).get(worldUUID) // Default Player Accesses
+            );
+        }
+    }
+
+    public void saveWorldData(String worldUUID, WorldData worldData) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement("UPDATE worlds SET " +
+                 "owner_uuid = ?, " +
+                 "display_name = ?, " +
+                 "creation_time = ?, " +
+                 "last_use_time = ?, " +
+                 "deletion_time = ?, " +
+                 "seed = ?, " +
+                 "password = ?, " +
+                 "password_enabled = ?, " +
+                 "cheats_enabled = ?, " +
+                 "plugins = ? " +
+                 "WHERE world_uuid = ?")) {
+            stmt.setString(1, worldData.ownerUUID());
+            stmt.setString(2, worldData.displayName());
+            stmt.setTimestamp(3, worldData.creationTime());
+            stmt.setTimestamp(4, worldData.lastUseTime());
+            stmt.setInt(5, worldData.deletionTime());
+            stmt.setLong(6, worldData.seed());
+            stmt.setString(7, worldData.password());
+            stmt.setBoolean(8, worldData.passwordEnabled());
+            stmt.setBoolean(9, worldData.cheatsEnabled());
+            stmt.setString(10, worldData.plugins());
+            stmt.setString(11, worldUUID);
+            int rows = stmt.executeUpdate();
+
+            if (rows == 0) {
+                PlayerWorlds.getInstance().getLogger().warning("Failed to save world data for world " + worldUUID +
+                  ". No rows were updated, meaning the world didn't exist in the Database.");
+            }
+        }
+    }
+
+    public HashMap<String, PlayerAccess> getPlayerAccessData(String playerUUID) throws SQLException {
+        final HashMap<String, PlayerAccess> playerAccesses = new HashMap<>();
+        try (PreparedStatement stmt = connection.prepareStatement("SELECT * FROM player_accesses WHERE player_uuid = ?")) {
+            stmt.setString(1, playerUUID);
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                playerAccesses.put(rs.getString("world_uuid"), new PlayerAccess(
+                  false,
+                  rs.getString("player_username"),
+                  rs.getBoolean("can_join"),
+                  rs.getBoolean("bypass_password"),
+                  rs.getBoolean("break_blocks"),
+                  rs.getBoolean("place_blocks"),
+                  rs.getBoolean("pickup_items")
+                ));
+            }
+
+            return playerAccesses;
+        }
+    }
+
+    /**
+     * Gets all of the stored SQLite data of a player
+     * @param playerUUID The UUID of the Player to get data of
+     * @return The PlayerInfo of the Player
+     * @throws SQLException Throws a Database Exception
+     */
+    public PlayerInfo getPlayerInfoData(final UUID playerUUID) throws SQLException {
+        try (PreparedStatement stmt = connection.prepareStatement("SELECT * FROM player_info WHERE player_uuid = ?")) {
+            stmt.setString(1, playerUUID.toString());
+            ResultSet rs = stmt.executeQuery();
+            if (!rs.next()) return null;
+
+            return new PlayerInfo(
+              false,
+              rs.getString("last_join_worlds"),
+              rs.getString("last_join_times")
+            );
         }
     }
 
