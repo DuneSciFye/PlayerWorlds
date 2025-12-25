@@ -11,6 +11,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
+import org.bukkit.inventory.AnvilInventory;
 import org.bukkit.inventory.view.AnvilView;
 
 import java.sql.SQLException;
@@ -45,8 +46,9 @@ public class NotTooExpensive extends Plugins implements Listener {
 
   @EventHandler
   public void onAnvilClose(InventoryCloseEvent e) {
-    if (!(e.getView() instanceof AnvilView view)) return;
-    Player p = (Player) view.getPlayer();
+    // Using AnvilInventory instead of AnvilView to support 1.20.6
+    if (!(e.getView() instanceof AnvilInventory inventory)) return;
+    Player p = (Player) inventory.getViewers().getFirst();
     String worldName = p.getWorld().getName();
     String worldUUID = WorldUtils.getWorldUUID(worldName);
 
